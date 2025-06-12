@@ -395,51 +395,66 @@ class Watchdrip {
 
     // **NEW METHOD: Create glucose display widgets**
     createGlucoseDisplayWidgets() {
-        // Main glucose value - large, centered like in your photo
+        // Time display - larger hours:minutes, smaller seconds, white text, centered
+        this.bgTimeTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
+            x: px(50),
+            y: px(50),
+            w: px(316),
+            h: px(80),
+            color: Colors.white,  // Changed to white
+            text_size: px(64),    // Larger font for time
+            align_h: hmUI.align.CENTER_H,  // Centered
+            align_v: hmUI.align.CENTER_V,
+            text_style: hmUI.text_style.NONE,
+            text: "12:37"
+        });
+
+        // Seconds display - smaller, positioned to the right of time
+        this.bgSecondsTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
+            x: px(300),
+            y: px(70),
+            w: px(66),
+            h: px(40),
+            color: Colors.white,  // White text
+            text_size: px(32),    // Smaller font for seconds
+            align_h: hmUI.align.LEFT,
+            align_v: hmUI.align.CENTER_V,
+            text_style: hmUI.text_style.NONE,
+            text: "12"
+        });
+
+        // Delta and time ago - white text, centered above glucose value
+        this.bgDeltaTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
+            x: px(50),
+            y: px(140),
+            w: px(316),
+            h: px(40),
+            color: Colors.white,  // Changed to white
+            text_size: px(32),
+            align_h: hmUI.align.CENTER_H,  // Centered
+            align_v: hmUI.align.CENTER_V,
+            text_style: hmUI.text_style.NONE,
+            text: "0.0 now"
+        });
+
+        // Main glucose value - large, centered
         this.bgValTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
             x: px(50),
-            y: px(150),
+            y: px(190),
             w: px(316),
             h: px(120),
             color: Colors.white,
             text_size: px(96),
-            align_h: hmUI.align.CENTER_H,
+            align_h: hmUI.align.CENTER_H,  // Centered
             align_v: hmUI.align.CENTER_V,
             text_style: hmUI.text_style.NONE,
-            text: "--"
+            text: "11.5"
         });
 
-        // Time and delta on separate lines above glucose value
-        this.bgTimeTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
-            x: px(50),
-            y: px(80),
-            w: px(200),
-            h: px(40),
-            color: Colors.defaultTransparent,
-            text_size: px(32),
-            align_h: hmUI.align.LEFT,
-            align_v: hmUI.align.CENTER_V,
-            text_style: hmUI.text_style.NONE,
-            text: "18:39"
-        });
-
-        this.bgDeltaTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
-            x: px(260),
-            y: px(80),
-            w: px(156),
-            h: px(40),
-            color: Colors.defaultTransparent,
-            text_size: px(32),
-            align_h: hmUI.align.RIGHT,
-            align_v: hmUI.align.CENTER_V,
-            text_style: hmUI.text_style.NONE,
-            text: "+0.2 0 mins"
-        });
-
-        // Trend arrow - positioned to the right of glucose value
+        // Trend arrow - positioned below glucose value, centered
         this.bgTrendImageWidget = hmUI.createWidget(hmUI.widget.IMG, {
-            x: px(300),
-            y: px(180),
+            x: px(178),  // Centered horizontally (416/2 - 30 = 178)
+            y: px(320),  // Below glucose value
             w: px(60),
             h: px(60),
             src: 'watchdrip/arrows/None.png'
@@ -448,7 +463,7 @@ class Watchdrip {
         // Stale indicator
         this.bgStaleLine = hmUI.createWidget(hmUI.widget.FILL_RECT, {
             x: px(50),
-            y: px(270),
+            y: px(390),
             w: px(316),
             h: px(3),
             color: Colors.bgHigh,
@@ -534,7 +549,7 @@ class Watchdrip {
             });
     }
 
-    // **NEW METHOD: Update glucose widgets in watchface style**
+    // **UPDATED METHOD: Update glucose widgets in watchface style**
     updateWatchfaceStyleWidgets() {
         if (!this.watchdripData || !this.watchdripData.getBg().isHasData()) {
             return;
@@ -555,19 +570,31 @@ class Watchdrip {
             color: bgValColor,
         });
 
-        // Update time display (current time, not glucose time)
+        // Update time display (current time) - hours:minutes only
         const now = new Date();
         const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
         const seconds = String(now.getSeconds()).padStart(2, '0');
         
         this.bgTimeTextWidget.setProperty(hmUI.prop.MORE, {
-            text: timeStr + " " + seconds
+            text: timeStr
         });
 
-        // Update delta with time ago
+        // Update seconds separately
+        this.bgSecondsTextWidget.setProperty(hmUI.prop.MORE, {
+            text: seconds
+        });
+
+        // Update delta with time ago - format like "0.0 now" or "+0.2 5 mins"
         const timeAgo = this.watchdripData.getTimeAgo(bgObj.time);
+        let deltaText;
+        if (timeAgo === "" || timeAgo === "0 mins" || timeAgo === "now") {
+            deltaText = bgObj.delta + " now";
+        } else {
+            deltaText = bgObj.delta + " " + timeAgo;
+        }
+        
         this.bgDeltaTextWidget.setProperty(hmUI.prop.MORE, {
-            text: bgObj.delta + " " + timeAgo
+            text: deltaText
         });
 
         // Update trend arrow
@@ -576,7 +603,7 @@ class Watchdrip {
         // Update stale indicator
         this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, this.watchdripData.isBgStale());
         
-        debug.log("Updated glucose display: " + bgObj.getBGVal() + " " + bgObj.delta);
+        debug.log("Updated glucose display: " + bgObj.getBGVal() + " " + deltaText);
     }
 
     hide_page() {
@@ -741,6 +768,7 @@ class Watchdrip {
     setBgElementsVisibility(visibility) {
         if (this.bgValTextWidget) this.bgValTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
         if (this.bgValTimeTextWidget) this.bgValTimeTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
+        if (this.bgSecondsTextWidget) this.bgSecondsTextWidget.setProperty(hmUI.prop.VISIBLE, visibility); // **NEW**
         if (this.bgTrendImageWidget) this.bgTrendImageWidget.setProperty(hmUI.prop.VISIBLE, visibility);
         if (this.bgStaleLine) this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, visibility);
         if (this.bgDeltaTextWidget) this.bgDeltaTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
