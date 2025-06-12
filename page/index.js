@@ -107,7 +107,7 @@ class Watchdrip {
                 break;
             case PagesType.UPDATE_LOCAL:
                 this.goBackType = GoBackType.HIDE;
-                this.fetch_page_local();
+                this.fetch_page_local_display(); // **CHANGED: Use new method**
                 break;
             case PagesType.HIDE:
                 this.hide_page();
@@ -346,6 +346,239 @@ class Watchdrip {
         this.fetchInfo(this.conf.alarmSettings.fetchParams);
     }
 
+    // **NEW METHOD: Display glucose data during background fetch**
+    fetch_page_local_display() {
+        debug.log("fetch_page_local_display - showing glucose data");
+        hmUI.setStatusBarVisible(false);
+        hmSetting.setBrightScreen(60); // Set moderate brightness
+        
+        // Initialize glucose data display
+        this.watchdripData = new WatchdripData(this.timeSensor);
+        
+        // Create glucose display widgets with watchface-like styling
+        this.createGlucoseDisplayWidgets();
+        
+        // Read and display current glucose data immediately
+        if (this.readInfo()) {
+            this.updateWatchfaceStyleWidgets();
+            this.setBgElementsVisibility(true);
+            debug.log("Displaying current glucose data during update");
+        } else {
+            // Show "Loading..." message if no data available
+            this.messageTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
+                ...MESSAGE_TEXT,
+                text: "Loading glucose data...",
+                text_size: px(28),
+                color: Colors.white
+            });
+            this.setMessageVisibility(true);
+        }
+        
+        // Create small progress indicator in corner
+        this.progressWidget = hmUI.createWidget(hmUI.widget.IMG, {
+            ...IMG_LOADING_PROGRESS,
+            x: px(350),
+            y: px(30),
+            w: px(25),
+            h: px(25)
+        });
+        
+        this.progressAngle = 0;
+        this.startLoader();
+        this.fetchMode = FetchMode.HIDDEN;
+        
+        // Start background fetch after brief delay to ensure display is shown
+        this.globalNS.setTimeout(() => {
+            this.fetchInfoSilent(this.conf.alarmSettings.fetchParams);
+        }, 200);
+    }
+
+    // **NEW METHOD: Create glucose display widgets**
+    createGlucoseDisplayWidgets() {
+        // Main glucose value - large, centered like in your photo
+        this.bgValTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
+            x: px(50),
+            y: px(150),
+            w: px(316),
+            h: px(120),
+            color: Colors.white,
+            text_size: px(96),
+            align_h: hmUI.align.CENTER_H,
+            align_v: hmUI.align.CENTER_V,
+            text_style: hmUI.text_style.NONE,
+            text: "--"
+        });
+
+        // Time and delta on separate lines above glucose value
+        this.bgTimeTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
+            x: px(50),
+            y: px(80),
+            w: px(200),
+            h: px(40),
+            color: Colors.defaultTransparent,
+            text_size: px(32),
+            align_h: hmUI.align.LEFT,
+            align_v: hmUI.align.CENTER_V,
+            text_style: hmUI.text_style.NONE,
+            text: "18:39"
+        });
+
+        this.bgDeltaTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
+            x: px(260),
+            y: px(80),
+            w: px(156),
+            h: px(40),
+            color: Colors.defaultTransparent,
+            text_size: px(32),
+            align_h: hmUI.align.RIGHT,
+            align_v: hmUI.align.CENTER_V,
+            text_style: hmUI.text_style.NONE,
+            text: "+0.2 0 mins"
+        });
+
+        // Trend arrow - positioned to the right of glucose value
+        this.bgTrendImageWidget = hmUI.createWidget(hmUI.widget.IMG, {
+            x: px(300),
+            y: px(180),
+            w: px(60),
+            h: px(60),
+            src: 'watchdrip/arrows/None.png'
+        });
+
+        // Stale indicator
+        this.bgStaleLine = hmUI.createWidget(hmUI.widget.FILL_RECT, {
+            x: px(50),
+            y: px(270),
+            w: px(316),
+            h: px(3),
+            color: Colors.bgHigh,
+            visible: false
+        });
+    }
+
+    // **NEW METHOD: Silent background fetch**
+    fetchInfoSilent(params = '') {
+        debug.log("fetchInfoSilent - fetching new data");
+        
+        this.resetLastUpdate();
+
+        if (messageBuilder.connectStatus() === false) {
+            debug.log("No BT Connection in silent mode");
+            this.stopLoader();
+            this.handleGoBack();
+            return;
+        }
+
+        if (params === "") {
+            params = WATCHDRIP_ALARM_SETTINGS_DEFAULTS.fetchParams;
+        }
+
+        this.updatingData = true;
+        
+        // Set timeout to auto-exit if fetch takes too long
+        this.silentTimeout = this.globalNS.setTimeout(() => {
+            debug.log("Silent fetch timeout");
+            this.stopLoader();
+            this.handleGoBack();
+        }, 4000);
+        
+        messageBuilder
+            .request({
+                method: Commands.getInfo,
+                params: params,
+            }, {timeout: 4000})
+            .then((data) => {
+                debug.log("received silent data");
+                let {result: info = {}} = data;
+                try {
+                    if (info.error) {
+                        debug.log("Silent fetch error");
+                        return;
+                    }
+                    
+                    // Save the new data
+                    this.lastInfoUpdate = this.saveInfo(info);
+                    
+                    // Update display with new data
+                    let dataInfo = str2json(info);
+                    this.watchdripData.setData(dataInfo);
+                    this.watchdripData.updateTimeDiff();
+                    
+                    // Refresh the glucose display
+                    this.updateWatchfaceStyleWidgets();
+                    
+                    dataInfo = null;
+                    info = null;
+                    
+                    debug.log("Updated glucose display with new data");
+                } catch (e) {
+                    debug.log("silent fetch error:" + e);
+                }
+            })
+            .catch((error) => {
+                debug.log("silent fetch error:" + error);
+            })
+            .finally(() => {
+                this.updatingData = false;
+                this.stopLoader();
+                
+                if (this.silentTimeout) {
+                    this.globalNS.clearTimeout(this.silentTimeout);
+                    this.silentTimeout = null;
+                }
+                
+                // Show updated data briefly before returning to watchface
+                this.globalNS.setTimeout(() => {
+                    this.handleGoBack();
+                }, 1000); // Show for 1 second before returning
+            });
+    }
+
+    // **NEW METHOD: Update glucose widgets in watchface style**
+    updateWatchfaceStyleWidgets() {
+        if (!this.watchdripData || !this.watchdripData.getBg().isHasData()) {
+            return;
+        }
+
+        let bgObj = this.watchdripData.getBg();
+        let bgValColor = Colors.white;
+        
+        if (bgObj.isHigh) {
+            bgValColor = Colors.bgHigh;
+        } else if (bgObj.isLow) {
+            bgValColor = Colors.bgLow;
+        }
+
+        // Update main glucose value
+        this.bgValTextWidget.setProperty(hmUI.prop.MORE, {
+            text: bgObj.getBGVal(),
+            color: bgValColor,
+        });
+
+        // Update time display (current time, not glucose time)
+        const now = new Date();
+        const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        
+        this.bgTimeTextWidget.setProperty(hmUI.prop.MORE, {
+            text: timeStr + " " + seconds
+        });
+
+        // Update delta with time ago
+        const timeAgo = this.watchdripData.getTimeAgo(bgObj.time);
+        this.bgDeltaTextWidget.setProperty(hmUI.prop.MORE, {
+            text: bgObj.delta + " " + timeAgo
+        });
+
+        // Update trend arrow
+        this.bgTrendImageWidget.setProperty(hmUI.prop.SRC, bgObj.getArrowResource());
+        
+        // Update stale indicator
+        this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, this.watchdripData.isBgStale());
+        
+        debug.log("Updated glucose display: " + bgObj.getBGVal() + " " + bgObj.delta);
+    }
+
     hide_page() {
         hmApp.gotoHome();
     }
@@ -448,7 +681,9 @@ class Watchdrip {
             this.globalNS.clearInterval(this.progressTimer);
             this.progressTimer = null;
         }
-        this.progressWidget.setProperty(hmUI.prop.VISIBLE, false);
+        if (this.progressWidget) {
+            this.progressWidget.setProperty(hmUI.prop.VISIBLE, false);
+        }
     }
 
     updateWidgets() {
@@ -504,15 +739,16 @@ class Watchdrip {
     }
 
     setBgElementsVisibility(visibility) {
-        this.bgValTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
-        this.bgValTimeTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
-        this.bgTrendImageWidget.setProperty(hmUI.prop.VISIBLE, visibility);
-        this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, visibility);
-        this.bgDeltaTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
+        if (this.bgValTextWidget) this.bgValTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
+        if (this.bgValTimeTextWidget) this.bgValTimeTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
+        if (this.bgTrendImageWidget) this.bgTrendImageWidget.setProperty(hmUI.prop.VISIBLE, visibility);
+        if (this.bgStaleLine) this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, visibility);
+        if (this.bgDeltaTextWidget) this.bgDeltaTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
+        if (this.bgTimeTextWidget) this.bgTimeTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
     }
 
     setMessageVisibility(visibility) {
-        this.messageTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
+        if (this.messageTextWidget) this.messageTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
     }
 
     readInfo() {
