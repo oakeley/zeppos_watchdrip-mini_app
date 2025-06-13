@@ -411,10 +411,10 @@ class Watchdrip {
             this.progressStep++;
             this.updateProgressIndicator(this.progressStep);
             
-            if (this.progressStep >= 4) {
+            if (this.progressStep >= 9) {
                 this.stopProgressAnimation();
             }
-        }, 800); // Update every 800ms (25%, 50%, 75%, 100% over ~3.2 seconds)
+        }, 400); // Update every 400ms (over ~3.2 seconds)
     }
 
     // **NEW METHOD: Stop progress animation**
