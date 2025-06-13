@@ -869,28 +869,41 @@ class Watchdrip {
             });
     }
 
+    // startLoader() {
+    //     this.progressWidget.setProperty(hmUI.prop.VISIBLE, true);
+    //     this.progressWidget.setProperty(hmUI.prop.MORE, {angle: this.progressAngle});
+    //     this.progressTimer = this.globalNS.setInterval(() => {
+    //         this.updateLoader();
+    //     }, PROGRESS_UPDATE_INTERVAL_MS);
+    // }
+
+    // updateLoader() {
+    //     this.progressAngle = this.progressAngle + PROGRESS_ANGLE_INC;
+    //     if (this.progressAngle >= 360) this.progressAngle = 0;
+    //     this.progressWidget.setProperty(hmUI.prop.MORE, {angle: this.progressAngle});
+    // }
+
+    // stopLoader() {
+    //     if (this.progressTimer !== null) {
+    //         this.globalNS.clearInterval(this.progressTimer);
+    //         this.progressTimer = null;
+    //     }
+    //     if (this.progressWidget) {
+    //         this.progressWidget.setProperty(hmUI.prop.VISIBLE, false);
+    //     }
+    // }
     startLoader() {
-        this.progressWidget.setProperty(hmUI.prop.VISIBLE, true);
-        this.progressWidget.setProperty(hmUI.prop.MORE, {angle: this.progressAngle});
-        this.progressTimer = this.globalNS.setInterval(() => {
-            this.updateLoader();
-        }, PROGRESS_UPDATE_INTERVAL_MS);
+        // Replaced with dash-based progress - method kept for compatibility
+        // but now uses startProgressAnimation() instead
     }
 
     updateLoader() {
-        this.progressAngle = this.progressAngle + PROGRESS_ANGLE_INC;
-        if (this.progressAngle >= 360) this.progressAngle = 0;
-        this.progressWidget.setProperty(hmUI.prop.MORE, {angle: this.progressAngle});
+        // Replaced with dash-based progress - method kept for compatibility
     }
 
     stopLoader() {
-        if (this.progressTimer !== null) {
-            this.globalNS.clearInterval(this.progressTimer);
-            this.progressTimer = null;
-        }
-        if (this.progressWidget) {
-            this.progressWidget.setProperty(hmUI.prop.VISIBLE, false);
-        }
+        // Replaced with dash-based progress - method kept for compatibility
+        // but now uses stopProgressAnimation() instead
     }
 
     updateWidgets() {
