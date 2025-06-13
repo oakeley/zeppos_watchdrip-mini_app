@@ -352,10 +352,15 @@ class Watchdrip {
         hmUI.setStatusBarVisible(false);
         hmSetting.setBrightScreen(60); // Set moderate brightness
         
+        // Get screen info for responsive progress indicator
+        const deviceInfo = hmSetting.getDeviceInfo();
+        const screenWidth = deviceInfo.width;
+        const screenHeight = deviceInfo.height;
+        
         // Initialize glucose data display
         this.watchdripData = new WatchdripData(this.timeSensor);
         
-        // Create glucose display widgets with watchface-like styling
+        // Create glucose display widgets with dynamic sizing
         this.createGlucoseDisplayWidgets();
         
         // Read and display current glucose data immediately
@@ -366,21 +371,28 @@ class Watchdrip {
         } else {
             // Show "Loading..." message if no data available
             this.messageTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
-                ...MESSAGE_TEXT,
+                x: Math.floor(screenWidth * 0.05),
+                y: Math.floor(screenHeight * 0.4),
+                w: Math.floor(screenWidth * 0.9),
+                h: Math.floor(screenHeight * 0.2),
                 text: "Loading glucose data...",
-                text_size: px(28),
-                color: Colors.white
+                text_size: Math.floor(screenWidth * 0.07),
+                color: Colors.white,
+                align_h: hmUI.align.CENTER_H,
+                align_v: hmUI.align.CENTER_V,
+                text_style: hmUI.text_style.NONE
             });
             this.setMessageVisibility(true);
         }
         
-        // Create small progress indicator in corner
+        // Create small progress indicator in corner (responsive size and position)
+        const progressSize = Math.floor(screenWidth * 0.06);
         this.progressWidget = hmUI.createWidget(hmUI.widget.IMG, {
             ...IMG_LOADING_PROGRESS,
-            x: px(350),
-            y: px(30),
-            w: px(25),
-            h: px(25)
+            x: screenWidth - progressSize - Math.floor(screenWidth * 0.05), // 5% margin from edge
+            y: Math.floor(screenHeight * 0.05), // 5% from top
+            w: progressSize,
+            h: progressSize
         });
         
         this.progressAngle = 0;
@@ -395,80 +407,116 @@ class Watchdrip {
 
     // **NEW METHOD: Create glucose display widgets**
     createGlucoseDisplayWidgets() {
-        // Time display - larger hours:minutes, smaller seconds, white text, centered
+        // Get screen dimensions and determine if round
+        const deviceInfo = hmSetting.getDeviceInfo();
+        const screenWidth = deviceInfo.width;
+        const screenHeight = deviceInfo.height;
+        const isRound = (screenWidth === screenHeight); // Round screens are typically square
+        
+        debug.log(`Screen: ${screenWidth}x${screenHeight}, Round: ${isRound}`);
+        
+        // Calculate responsive dimensions using ratios
+        const centerX = Math.floor(screenWidth / 2);
+        const usableWidth = Math.floor(screenWidth * 0.9); // 90% of screen width
+        const leftMargin = Math.floor((screenWidth - usableWidth) / 2);
+        
+        // Font sizes as ratios of screen width
+        const timeFontSize = Math.floor(screenWidth * 0.15); // ~15% of screen width
+        const secondsFontSize = Math.floor(screenWidth * 0.08); // ~8% of screen width
+        const deltaFontSize = Math.floor(screenWidth * 0.075); // ~7.5% of screen width
+        const glucoseFontSize = Math.floor(screenWidth * 0.23); // ~23% of screen width
+        
+        // Vertical positioning as ratios of screen height
+        const timeY = Math.floor(screenHeight * 0.12); // 12% from top
+        const deltaY = Math.floor(screenHeight * 0.32); // 32% from top
+        const glucoseY = Math.floor(screenHeight * 0.45); // 45% from top
+        const arrowY = Math.floor(screenHeight * 0.75); // 75% from top
+        const staleY = Math.floor(screenHeight * 0.92); // 92% from top
+        
+        // Arrow size proportional to screen
+        const arrowSize = Math.floor(screenWidth * 0.14);
+        
+        // Time display - larger hours:minutes, white text, centered
         this.bgTimeTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
-            x: px(50),
-            y: px(50),
-            w: px(316),
-            h: px(80),
-            color: Colors.white,  // Changed to white
-            text_size: px(64),    // Larger font for time
-            align_h: hmUI.align.CENTER_H,  // Centered
+            x: leftMargin,
+            y: timeY,
+            w: usableWidth,
+            h: Math.floor(screenHeight * 0.15),
+            color: Colors.white,
+            text_size: timeFontSize,
+            align_h: hmUI.align.CENTER_H,
             align_v: hmUI.align.CENTER_V,
             text_style: hmUI.text_style.NONE,
-            text: "12:37"
+            text: "--:--" // Default placeholder
         });
 
-        // Seconds display - smaller, positioned to the right of time
+        // Seconds display - smaller, positioned to the right of center
+        const secondsX = isRound ? 
+            centerX + Math.floor(timeFontSize * 1.8) : // Round: offset from center
+            Math.floor(screenWidth * 0.75); // Rectangular: 75% across
+        
         this.bgSecondsTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
-            x: px(300),
-            y: px(70),
-            w: px(66),
-            h: px(40),
-            color: Colors.white,  // White text
-            text_size: px(32),    // Smaller font for seconds
+            x: secondsX,
+            y: timeY + Math.floor(timeFontSize * 0.25),
+            w: Math.floor(screenWidth * 0.2),
+            h: Math.floor(screenHeight * 0.1),
+            color: Colors.white,
+            text_size: secondsFontSize,
             align_h: hmUI.align.LEFT,
             align_v: hmUI.align.CENTER_V,
             text_style: hmUI.text_style.NONE,
-            text: "12"
+            text: "--" // Default placeholder
         });
 
-        // Delta and time ago - white text, centered above glucose value
+        // Delta and time ago - white text, centered
         this.bgDeltaTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
-            x: px(50),
-            y: px(140),
-            w: px(316),
-            h: px(40),
-            color: Colors.white,  // Changed to white
-            text_size: px(32),
-            align_h: hmUI.align.CENTER_H,  // Centered
+            x: leftMargin,
+            y: deltaY,
+            w: usableWidth,
+            h: Math.floor(screenHeight * 0.1),
+            color: Colors.white,
+            text_size: deltaFontSize,
+            align_h: hmUI.align.CENTER_H,
             align_v: hmUI.align.CENTER_V,
             text_style: hmUI.text_style.NONE,
-            text: "0.0 now"
+            text: "-- --" // Default placeholder
         });
 
         // Main glucose value - large, centered
         this.bgValTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
-            x: px(50),
-            y: px(190),
-            w: px(316),
-            h: px(120),
+            x: leftMargin,
+            y: glucoseY,
+            w: usableWidth,
+            h: Math.floor(screenHeight * 0.25),
             color: Colors.white,
-            text_size: px(96),
-            align_h: hmUI.align.CENTER_H,  // Centered
+            text_size: glucoseFontSize,
+            align_h: hmUI.align.CENTER_H,
             align_v: hmUI.align.CENTER_V,
             text_style: hmUI.text_style.NONE,
-            text: "11.5"
+            text: "--" // Default placeholder
         });
 
         // Trend arrow - positioned below glucose value, centered
         this.bgTrendImageWidget = hmUI.createWidget(hmUI.widget.IMG, {
-            x: px(178),  // Centered horizontally (416/2 - 30 = 178)
-            y: px(320),  // Below glucose value
-            w: px(60),
-            h: px(60),
+            x: centerX - Math.floor(arrowSize / 2), // Centered horizontally
+            y: arrowY,
+            w: arrowSize,
+            h: arrowSize,
             src: 'watchdrip/arrows/None.png'
         });
 
-        // Stale indicator
+        // Stale indicator - responsive width and position
+        const staleHeight = Math.floor(screenHeight * 0.008); // Very thin line
         this.bgStaleLine = hmUI.createWidget(hmUI.widget.FILL_RECT, {
-            x: px(50),
-            y: px(390),
-            w: px(316),
-            h: px(3),
+            x: leftMargin,
+            y: staleY,
+            w: usableWidth,
+            h: staleHeight,
             color: Colors.bgHigh,
             visible: false
         });
+        
+        debug.log(`Layout created for ${screenWidth}x${screenHeight} (${isRound ? 'round' : 'rectangular'})`);
     }
 
     // **NEW METHOD: Silent background fetch**
@@ -551,59 +599,93 @@ class Watchdrip {
 
     // **UPDATED METHOD: Update glucose widgets in watchface style**
     updateWatchfaceStyleWidgets() {
-        if (!this.watchdripData || !this.watchdripData.getBg().isHasData()) {
+        if (!this.watchdripData) {
+            debug.log("No watchdripData available");
             return;
         }
 
-        let bgObj = this.watchdripData.getBg();
-        let bgValColor = Colors.white;
+        const bgObj = this.watchdripData.getBg();
         
+        if (!bgObj || !bgObj.isHasData()) {
+            debug.log("No glucose data available");
+            // Set placeholder values when no data
+            if (this.bgValTextWidget) {
+                this.bgValTextWidget.setProperty(hmUI.prop.MORE, {
+                    text: "--",
+                    color: Colors.white
+                });
+            }
+            if (this.bgDeltaTextWidget) {
+                this.bgDeltaTextWidget.setProperty(hmUI.prop.MORE, {
+                    text: "-- --"
+                });
+            }
+            return;
+        }
+
+        // Determine glucose value color based on high/low status
+        let bgValColor = Colors.white;
         if (bgObj.isHigh) {
             bgValColor = Colors.bgHigh;
         } else if (bgObj.isLow) {
             bgValColor = Colors.bgLow;
         }
 
-        // Update main glucose value
-        this.bgValTextWidget.setProperty(hmUI.prop.MORE, {
-            text: bgObj.getBGVal(),
-            color: bgValColor,
-        });
+        // Update main glucose value with actual data
+        if (this.bgValTextWidget) {
+            this.bgValTextWidget.setProperty(hmUI.prop.MORE, {
+                text: bgObj.getBGVal() || "--",
+                color: bgValColor,
+            });
+        }
 
         // Update time display (current time) - hours:minutes only
         const now = new Date();
         const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
         const seconds = String(now.getSeconds()).padStart(2, '0');
         
-        this.bgTimeTextWidget.setProperty(hmUI.prop.MORE, {
-            text: timeStr
-        });
+        if (this.bgTimeTextWidget) {
+            this.bgTimeTextWidget.setProperty(hmUI.prop.MORE, {
+                text: timeStr
+            });
+        }
 
         // Update seconds separately
-        this.bgSecondsTextWidget.setProperty(hmUI.prop.MORE, {
-            text: seconds
-        });
+        if (this.bgSecondsTextWidget) {
+            this.bgSecondsTextWidget.setProperty(hmUI.prop.MORE, {
+                text: seconds
+            });
+        }
 
         // Update delta with time ago - format like "0.0 now" or "+0.2 5 mins"
         const timeAgo = this.watchdripData.getTimeAgo(bgObj.time);
+        const delta = bgObj.delta || "0.0";
         let deltaText;
-        if (timeAgo === "" || timeAgo === "0 mins" || timeAgo === "now") {
-            deltaText = bgObj.delta + " now";
+        
+        if (!timeAgo || timeAgo === "" || timeAgo === "0 mins") {
+            deltaText = delta + " now";
         } else {
-            deltaText = bgObj.delta + " " + timeAgo;
+            deltaText = delta + " " + timeAgo;
         }
         
-        this.bgDeltaTextWidget.setProperty(hmUI.prop.MORE, {
-            text: deltaText
-        });
+        if (this.bgDeltaTextWidget) {
+            this.bgDeltaTextWidget.setProperty(hmUI.prop.MORE, {
+                text: deltaText
+            });
+        }
 
-        // Update trend arrow
-        this.bgTrendImageWidget.setProperty(hmUI.prop.SRC, bgObj.getArrowResource());
+        // Update trend arrow with actual arrow resource
+        if (this.bgTrendImageWidget && bgObj.getArrowResource) {
+            this.bgTrendImageWidget.setProperty(hmUI.prop.SRC, bgObj.getArrowResource());
+        }
         
-        // Update stale indicator
-        this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, this.watchdripData.isBgStale());
+        // Update stale indicator based on actual data freshness
+        if (this.bgStaleLine) {
+            const isStale = this.watchdripData.isBgStale();
+            this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, isStale);
+        }
         
-        debug.log("Updated glucose display: " + bgObj.getBGVal() + " " + deltaText);
+        debug.log(`Updated glucose display: ${bgObj.getBGVal()} ${deltaText} (${bgObj.isHigh ? 'HIGH' : bgObj.isLow ? 'LOW' : 'NORMAL'})`);
     }
 
     hide_page() {
