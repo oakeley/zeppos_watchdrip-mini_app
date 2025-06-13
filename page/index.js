@@ -456,16 +456,16 @@ class Watchdrip {
             Math.floor(screenWidth * 0.75); // Rectangular: 75% across
         
         this.bgSecondsTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
-            x: secondsX,
-            y: timeY + Math.floor(timeFontSize * 0.25),
-            w: Math.floor(screenWidth * 0.2),
-            h: Math.floor(screenHeight * 0.1),
-            color: Colors.white,
-            text_size: secondsFontSize,
-            align_h: hmUI.align.LEFT,
-            align_v: hmUI.align.CENTER_V,
-            text_style: hmUI.text_style.NONE,
-            text: "--" // Default placeholder
+            // x: secondsX,
+            // y: timeY + Math.floor(timeFontSize * 0.25),
+            // w: Math.floor(screenWidth * 0.2),
+            // h: Math.floor(screenHeight * 0.1),
+            // color: Colors.white,
+            // text_size: secondsFontSize,
+            // align_h: hmUI.align.LEFT,
+            // align_v: hmUI.align.CENTER_V,
+            // text_style: hmUI.text_style.NONE,
+            // text: "--" // Default placeholder
         });
 
         // Delta and time ago - white text, centered
