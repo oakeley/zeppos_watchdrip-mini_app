@@ -346,13 +346,94 @@ class Watchdrip {
         this.fetchInfo(this.conf.alarmSettings.fetchParams);
     }
 
+    // **NEW METHOD: Create dash-based progress indicator**
+    createProgressIndicator(screenWidth, screenHeight) {
+        // Progress indicator - white dashes below the glucose value
+        this.progressTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {
+            x: Math.floor(screenWidth * 0.1),
+            y: Math.floor(screenHeight * 0.85), // Below everything else
+            w: Math.floor(screenWidth * 0.8),
+            h: Math.floor(screenHeight * 0.08),
+            color: Colors.white,
+            text_size: Math.floor(screenWidth * 0.06),
+            align_h: hmUI.align.CENTER_H,
+            align_v: hmUI.align.CENTER_V,
+            text_style: hmUI.text_style.NONE,
+            text: "",
+            visible: false
+        });
+
+        // Bluetooth disconnected indicator - red circle
+        const circleSize = Math.floor(screenWidth * 0.08);
+        this.btDisconnectedWidget = hmUI.createWidget(hmUI.widget.FILL_RECT, {
+            x: Math.floor(screenWidth / 2 - circleSize / 2),
+            y: Math.floor(screenHeight * 0.87),
+            w: circleSize,
+            h: circleSize,
+            radius: Math.floor(circleSize / 2), // Make it circular
+            color: Colors.bgHigh, // Red color
+            visible: false
+        });
+    }
+
+    // **NEW METHOD: Update progress indicator**
+    updateProgressIndicator(step) {
+        if (!this.progressTextWidget) return;
+        
+        const progressTexts = ["", "-", "--", "---", "----"];
+        const progressText = progressTexts[Math.min(step, 4)] || "----";
+        
+        this.progressTextWidget.setProperty(hmUI.prop.MORE, {
+            text: progressText
+        });
+        this.progressTextWidget.setProperty(hmUI.prop.VISIBLE, step > 0 && step < 5);
+        
+        debug.log(`Progress: ${step}/4 - ${progressText}`);
+    }
+
+    // **NEW METHOD: Show/hide Bluetooth disconnected indicator**
+    updateBluetoothStatus(connected) {
+        if (this.btDisconnectedWidget) {
+            this.btDisconnectedWidget.setProperty(hmUI.prop.VISIBLE, !connected);
+        }
+        if (this.progressTextWidget) {
+            this.progressTextWidget.setProperty(hmUI.prop.VISIBLE, connected && this.progressStep > 0 && this.progressStep < 5);
+        }
+    }
+
+    // **NEW METHOD: Start progress animation**
+    startProgressAnimation() {
+        this.progressStep = 1;
+        this.updateProgressIndicator(this.progressStep);
+        
+        // Update progress at intervals
+        this.progressTimer = this.globalNS.setInterval(() => {
+            this.progressStep++;
+            this.updateProgressIndicator(this.progressStep);
+            
+            if (this.progressStep >= 4) {
+                this.stopProgressAnimation();
+            }
+        }, 800); // Update every 800ms (25%, 50%, 75%, 100% over ~3.2 seconds)
+    }
+
+    // **NEW METHOD: Stop progress animation**
+    stopProgressAnimation() {
+        if (this.progressTimer) {
+            this.globalNS.clearInterval(this.progressTimer);
+            this.progressTimer = null;
+        }
+        this.progressStep = 0;
+        this.updateProgressIndicator(0);
+    }
+
     // **NEW METHOD: Display glucose data during background fetch**
     fetch_page_local_display() {
         debug.log("fetch_page_local_display - showing glucose data");
         hmUI.setStatusBarVisible(false);
         hmSetting.setBrightScreen(60); // Set moderate brightness
         
-        // Get screen info for responsive progress indicator
+        // Get screen info for responsive layout
         const deviceInfo = hmSetting.getDeviceInfo();
         const screenWidth = deviceInfo.width;
         const screenHeight = deviceInfo.height;
@@ -362,6 +443,9 @@ class Watchdrip {
         
         // Create glucose display widgets with dynamic sizing
         this.createGlucoseDisplayWidgets();
+        
+        // Create progress indicator as text widget (dash-based)
+        this.createProgressIndicator(screenWidth, screenHeight);
         
         // Read and display current glucose data immediately
         if (this.readInfo()) {
@@ -385,19 +469,8 @@ class Watchdrip {
             this.setMessageVisibility(true);
         }
         
-        // Create small progress indicator in corner (responsive size and position)
-        const progressSize = Math.floor(screenWidth * 0.06);
-        this.progressWidget = hmUI.createWidget(hmUI.widget.IMG, {
-            ...IMG_LOADING_PROGRESS,
-            x: screenWidth - progressSize - Math.floor(screenWidth * 0.05), // 5% margin from edge
-            y: Math.floor(screenHeight * 0.05), // 5% from top
-            w: progressSize,
-            h: progressSize
-        });
-        
-        this.progressAngle = 0;
-        this.startLoader();
         this.fetchMode = FetchMode.HIDDEN;
+        this.progressStep = 0; // Initialize progress tracking
         
         // Start background fetch after brief delay to ensure display is shown
         this.globalNS.setTimeout(() => {
@@ -431,7 +504,7 @@ class Watchdrip {
         const deltaY = Math.floor(screenHeight * 0.32); // 32% from top
         const glucoseY = Math.floor(screenHeight * 0.45); // 45% from top
         const arrowY = Math.floor(screenHeight * 0.75); // 75% from top
-        const staleY = Math.floor(screenHeight * 0.92); // 92% from top
+        const staleBarY = Math.floor(screenHeight * 0.92); // 92% from top
         
         // Arrow size proportional to screen
         const arrowSize = Math.floor(screenWidth * 0.14);
@@ -496,6 +569,16 @@ class Watchdrip {
             text: "--" // Default placeholder
         });
 
+        // **NEW: Stale data overlay - white line through glucose value when >10 minutes old**
+        this.staleLineWidget = hmUI.createWidget(hmUI.widget.FILL_RECT, {
+            x: leftMargin + Math.floor(usableWidth * 0.1), // 10% margin from glucose text edges
+            y: glucoseY + Math.floor(screenHeight * 0.125), // Middle of glucose text area
+            w: Math.floor(usableWidth * 0.8), // 80% of usable width
+            h: Math.floor(screenHeight * 0.008), // Thin white line
+            color: Colors.white,
+            visible: false
+        });
+
         // Trend arrow - positioned below glucose value, centered
         this.bgTrendImageWidget = hmUI.createWidget(hmUI.widget.IMG, {
             x: centerX - Math.floor(arrowSize / 2), // Centered horizontally
@@ -505,17 +588,6 @@ class Watchdrip {
             src: 'watchdrip/arrows/None.png'
         });
 
-        // Stale indicator - responsive width and position
-        const staleHeight = Math.floor(screenHeight * 0.008); // Very thin line
-        this.bgStaleLine = hmUI.createWidget(hmUI.widget.FILL_RECT, {
-            x: leftMargin,
-            y: staleY,
-            w: usableWidth,
-            h: staleHeight,
-            color: Colors.bgHigh,
-            visible: false
-        });
-        
         debug.log(`Layout created for ${screenWidth}x${screenHeight} (${isRound ? 'round' : 'rectangular'})`);
     }
 
@@ -525,10 +597,16 @@ class Watchdrip {
         
         this.resetLastUpdate();
 
-        if (messageBuilder.connectStatus() === false) {
+        // Check Bluetooth status first
+        const btConnected = messageBuilder.connectStatus();
+        this.updateBluetoothStatus(btConnected);
+        
+        if (!btConnected) {
             debug.log("No BT Connection in silent mode");
-            this.stopLoader();
-            this.handleGoBack();
+            // Show red circle for 2 seconds then exit
+            this.globalNS.setTimeout(() => {
+                this.handleGoBack();
+            }, 2000);
             return;
         }
 
@@ -538,10 +616,13 @@ class Watchdrip {
 
         this.updatingData = true;
         
+        // Start progress animation
+        this.startProgressAnimation();
+        
         // Set timeout to auto-exit if fetch takes too long
         this.silentTimeout = this.globalNS.setTimeout(() => {
             debug.log("Silent fetch timeout");
-            this.stopLoader();
+            this.stopProgressAnimation();
             this.handleGoBack();
         }, 4000);
         
@@ -583,7 +664,7 @@ class Watchdrip {
             })
             .finally(() => {
                 this.updatingData = false;
-                this.stopLoader();
+                this.stopProgressAnimation();
                 
                 if (this.silentTimeout) {
                     this.globalNS.clearTimeout(this.silentTimeout);
@@ -619,6 +700,13 @@ class Watchdrip {
                 this.bgDeltaTextWidget.setProperty(hmUI.prop.MORE, {
                     text: "-- --"
                 });
+            }
+            // Hide stale indicators when no data
+            if (this.staleLineWidget) {
+                this.staleLineWidget.setProperty(hmUI.prop.VISIBLE, false);
+            }
+            if (this.bgStaleLine) {
+                this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, false);
             }
             return;
         }
@@ -679,13 +767,23 @@ class Watchdrip {
             this.bgTrendImageWidget.setProperty(hmUI.prop.SRC, bgObj.getArrowResource());
         }
         
-        // Update stale indicator based on actual data freshness
+        // **NEW: Check if data is >10 minutes old and show white line through glucose value**
+        const TEN_MINUTES_MS = 10 * 60 * 1000; // 10 minutes in milliseconds
+        const dataAge = this.timeSensor.utc - bgObj.time - (this.watchdripData.timeDiff || 0);
+        const isVeryStale = dataAge > TEN_MINUTES_MS;
+        
+        if (this.staleLineWidget) {
+            this.staleLineWidget.setProperty(hmUI.prop.VISIBLE, isVeryStale);
+        }
+        
+        // Update original stale indicator (red bar at bottom) - for any stale data
         if (this.bgStaleLine) {
             const isStale = this.watchdripData.isBgStale();
             this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, isStale);
         }
         
-        debug.log(`Updated glucose display: ${bgObj.getBGVal()} ${deltaText} (${bgObj.isHigh ? 'HIGH' : bgObj.isLow ? 'LOW' : 'NORMAL'})`);
+        const staleStatus = isVeryStale ? "VERY STALE (>10min)" : this.watchdripData.isBgStale() ? "STALE" : "FRESH";
+        debug.log(`Updated glucose display: ${bgObj.getBGVal()} ${deltaText} (${bgObj.isHigh ? 'HIGH' : bgObj.isLow ? 'LOW' : 'NORMAL'}) [${staleStatus}]`);
     }
 
     hide_page() {
@@ -847,14 +945,17 @@ class Watchdrip {
         this.setMessageVisibility(true);
     }
 
+    // **UPDATED METHOD: Updated visibility control for all widgets**
     setBgElementsVisibility(visibility) {
         if (this.bgValTextWidget) this.bgValTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
         if (this.bgValTimeTextWidget) this.bgValTimeTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
-        if (this.bgSecondsTextWidget) this.bgSecondsTextWidget.setProperty(hmUI.prop.VISIBLE, visibility); // **NEW**
+        // if (this.bgSecondsTextWidget) this.bgSecondsTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
         if (this.bgTrendImageWidget) this.bgTrendImageWidget.setProperty(hmUI.prop.VISIBLE, visibility);
         if (this.bgStaleLine) this.bgStaleLine.setProperty(hmUI.prop.VISIBLE, visibility);
         if (this.bgDeltaTextWidget) this.bgDeltaTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
         if (this.bgTimeTextWidget) this.bgTimeTextWidget.setProperty(hmUI.prop.VISIBLE, visibility);
+        // Note: staleLineWidget visibility is controlled by data age, not general visibility
+        // Note: progressTextWidget and btDisconnectedWidget have their own visibility logic
     }
 
     setMessageVisibility(visibility) {
